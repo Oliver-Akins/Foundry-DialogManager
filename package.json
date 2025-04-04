@@ -1,0 +1,13 @@
+{
+  "devDependencies": {
+    "@eslint/js": "^9.8.0",
+    "@stylistic/eslint-plugin": "^2.6.1",
+    "eslint": "^9.8.0",
+    "globals": "^15.9.0",
+    "sass": "^1.77.8"
+  },
+  "scripts": {
+    "lint": "eslint --fix",
+    "lint:nofix": "eslint"
+  }
+}
