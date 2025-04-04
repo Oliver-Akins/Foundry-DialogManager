@@ -43,6 +43,8 @@ export class DialogManager {
 			data.close = () => DialogManager.#dialogs.delete(dialogId);
 		};
 
+		// TODO: Add a module-specific class to the Dialog
+
 		// Create the Dialog with the modified data
 		const dialog = new Dialog(data, opts);
 		DialogManager.#dialogs.set(dialogId, dialog);
