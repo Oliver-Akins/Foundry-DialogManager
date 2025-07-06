@@ -1,83 +1,19 @@
-import { filePath } from "../consts.mjs";
-import { localizer } from "./localizer.mjs";
+import { AskDialog } from "../Dialogs/Ask.mjs";
 
-/**
- * A utility class that allows managing Dialogs that are created for various
- * purposes such as deleting items, help popups, etc. This is a singleton class
- * that upon instantiating after the first time will just return the first instance
- */
 export class DialogManager {
-
-	/** @type {Map<string, Dialog>} */
+	/** @type {Map<string, Promise>} */
+	static #promises = new Map();
 	static #dialogs = new Map();
 
-	/**
-	 * Focuses a dialog if it already exists, or creates a new one and renders it.
-	 *
-	 * @param {string} dialogId The ID to associate with the dialog, should be unique
-	 * @param {object} data The data to pass to the Dialog constructor
-	 * @param {DialogOptions} opts The options to pass to the Dialog constructor
-	 * @returns {Dialog} The Dialog instance
-	 */
-	static async createOrFocus(dialogId, data, opts = {}) {
-		if (DialogManager.#dialogs.has(dialogId)) {
-			const dialog = DialogManager.#dialogs.get(dialogId);
-			dialog.bringToTop();
-			return dialog;
-		};
+	static async createOrFocus() {};
 
-		/*
-		This makes sure that if a close function is provided as a part of the data,
-		that the dialog still gets removed from the set once it's closed, otherwise
-		it could lead to dangling references that I don't care to keep. Or if I don't
-		provide the close function, it just sets the function as there isn't anything
-		extra that's needed to be called.
-		*/
-		if (data?.close) {
-			const provided = data.close;
-			data.close = () => {
-				DialogManager.#dialogs.delete(dialogId);
-				provided();
-			};
-		} else {
-			data.close = () => DialogManager.#dialogs.delete(dialogId);
-		};
-
-		// TODO: Add a module-specific class to the Dialog
-
-		// Create the Dialog with the modified data
-		const dialog = new Dialog(data, opts);
-		DialogManager.#dialogs.set(dialogId, dialog);
-		dialog.render(true);
-		return dialog;
+	static async close(id) {
+		this.#dialogs.get(id)?.close();
+		this.#dialogs.delete(id);
+		this.#promises.delete(id);
 	};
 
-	/**
-	 * Closes a dialog if it is rendered
-	 *
-	 * @param {string} dialogId The ID of the dialog to close
-	 */
-	static async close(dialogId) {
-		const dialog = DialogManager.#dialogs.get(dialogId);
-		dialog?.close();
-	};
-
-	static async helpDialog(
-		helpId,
-		helpContent,
-		helpTitle = `DialogManager.help.title`,
-		localizationData = {},
-	) {
-		DialogManager.createOrFocus(
-			helpId,
-			{
-				title: localizer(helpTitle, localizationData),
-				content: localizer(helpContent, localizationData),
-				buttons: {},
-			},
-			{ resizable: true },
-		);
-	};
+	static async helpDialog() {};
 
 	/**
 	 * Asks the user to provide a simple piece of information, this is primarily
@@ -85,19 +21,52 @@ export class DialogManager {
 	 * as needed. This returns an object of input keys/labels to the value the user
 	 * input for that label, if there is only one input, this will return the value
 	 * without an object wrapper, allowing for easier access.
+	 *
+	 * @param {AskConfig} data
+	 * @param {AskOptions} opts
+	 * @returns {AskResult}
 	 */
-	static async ask(data, opts = {}) {
+	static async ask(
+		data,
+		{
+			onlyOneWaiting = true,
+		} = {}
+	) {
 		if (!data.id) {
-			throw new Error(`Asking the user for input must contain an ID`);
-		}
+			return {
+				state: "errored",
+				error: "An ID must be provided",
+			};
+		};
 		if (!data.inputs.length) {
-			throw new Error(`Must include at least one input specification when prompting the user`);
-		}
+			return {
+				state: "errored",
+				error: "At least one input must be provided",
+			};
+		};
+		const id = data.id;
+
+		// Don't do multi-thread waiting
+		if (this.#dialogs.has(id)) {
+			const app = this.#dialogs.get(id);
+			app.bringToFront();
+			if (onlyOneWaiting) {
+				return { state: "fronted" };
+			} else {
+				return this.#promises.get(id);
+			};
+		};
 
 		let autofocusClaimed = false;
 		for (const i of data.inputs) {
 			i.id ??= foundry.utils.randomID(16);
-			i.inputType ??= `text`;
+			i.key ??= i.label;
+
+			switch (i.type) {
+				case `input`: {
+					i.inputType ??= `text`;
+				}
+			}
 
 			// Only ever allow one input to claim autofocus
 			i.autofocus &&= !autofocusClaimed;
@@ -115,64 +84,24 @@ export class DialogManager {
 			};
 		};
 
-		opts.jQuery = true;
-		data.default ??= `confirm`;
-		data.title ??= `System Question`;
-
-		data.content = await renderTemplate(
-			filePath(`templates/Dialogs/ask.hbs`),
-			data,
-		);
-
-		return new Promise((resolve, reject) => {
-			DialogManager.createOrFocus(
-				data.id,
-				{
-					...data,
-					buttons: {
-						confirm: {
-							label: `Confirm`,
-							callback: (html) => {
-								const answers = {};
-
-								/*
-								Retrieve the answer for every input provided using the ID
-								determined during initial data prep, and assign the value
-								to the property of the label in the object.
-								*/
-								for (const i of data.inputs) {
-									const element = html.find(`#${i.id}`)[0];
-									let value = element.value;
-									switch (i.inputType) {
-										case `number`:
-											value = parseFloat(value);
-											break;
-										case `checkbox`:
-											value = element.checked;
-											break;
-									}
-									answers[i.key ?? i.label] = value;
-									if (data.inputs.length === 1) {
-										resolve(value);
-										return;
-									}
-								}
-
-								resolve(answers);
-							},
-						},
-						cancel: {
-							label: `Cancel`,
-							callback: () => reject(`User cancelled the prompt`),
-						},
-					},
+		const promise = new Promise((resolve) => {
+			const app = new AskDialog({
+				...data,
+				onClose: () => {
+					this.#dialogs.delete(id);
+					this.#promises.delete(id);
+					resolve({ state: "prompted", });
 				},
-				opts,
-			);
+				onConfirm: (answers) => resolve({ state: "prompted", answers, }),
+			});
+			app.render({ force: true });
+			this.#dialogs.set(id, app);
 		});
+		this.#promises.set(id, promise);
+		return promise;
 	};
 
 	static get size() {
-		return DialogManager.#dialogs.size;
+		return this.#dialogs.size;
 	};
 };

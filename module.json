@@ -4,9 +4,9 @@
 	"description": "A utility library to provide an improved interface for managing and creating dialogs",
 	"version": "1.0.0",
 	"compatibility": {
-		"minimum": 12,
-		"verified": 12,
-		"maximum": 12
+		"minimum": 13,
+		"verified": 13,
+		"maximum": 13
 	},
 	"authors": [
 		{
@@ -15,10 +15,13 @@
 		}
 	],
 	"esmodules": [
-		"src/main.mjs"
+		"module/main.mjs"
 	],
 	"styles": [
-		"templates/style.css"
+		{
+			"src": "styles/main.css",
+			"layer": "modules.dialog-manager"
+		}
 	],
 	"languages": [
 		{
@@ -28,7 +31,7 @@
 		}
 	],
 	"url": "https://github.com/Oliver-Akins/Foundry-DialogManager",
-	"manifest": "",
+	"manifest": "https://github.com/Oliver-Akins/Foundry-DialogManager",
 	"download": "",
 	"readme": "README.md",
 	"bugs": "https://github.com/Oliver-Akins/Foundry-DialogManager/issues",
